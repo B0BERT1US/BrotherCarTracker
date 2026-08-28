@@ -120,6 +120,28 @@ input.reg{text-transform:uppercase;font-weight:800;letter-spacing:.08em;font-siz
 #toast{position:fixed;left:16px;right:16px;bottom:calc(env(safe-area-inset-bottom) + 76px);background:var(--ink);color:#fff;border-radius:12px;padding:12px 14px;display:none;align-items:center;gap:12px;z-index:20;max-width:728px;margin:0 auto;font-weight:600}
 #toast.show{display:flex}
 #toast button{margin-left:auto;font-weight:800;text-transform:uppercase;padding:4px 6px;color:var(--plate)}
+#screen.wide{max-width:760px}
+@media (min-width:1000px){#screen.wide{max-width:1240px;display:grid;grid-template-columns:minmax(0,1fr) 615px;grid-template-areas:"a p" "b p";gap:0 28px;align-items:start}.edA{grid-area:a}.edB{grid-area:b}.prev{grid-area:p;position:sticky;top:64px}}
+.pwrap{overflow:hidden;margin-bottom:12px}
+.paper{width:595px;min-height:842px;background:#fff;color:#000;padding:40px;font-family:Helvetica,Arial,sans-serif;font-size:9.5px;line-height:1.3;box-shadow:0 2px 14px rgba(0,0,0,.18);transform-origin:top left;position:relative;border-radius:2px}
+.paper .ph{display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:12px;border-bottom:1px solid #000;margin-bottom:14px}
+.paper .pb{font-size:16px;font-weight:700;margin-bottom:6px}
+.paper .ps{font-size:9px;line-height:1.35}
+.paper .pt{text-align:right}
+.paper .ptt{font-size:22px;font-weight:700;line-height:1}
+.paper .pn{font-size:11px;font-weight:700;margin:4px 0 6px}
+.paper .pcols{display:flex;gap:20px;margin-bottom:10px}.paper .pcols>div{flex:1;font-size:10px;line-height:1.35}
+.paper .plbl{font-size:8px;font-weight:700;color:#6b7076;letter-spacing:.04em;margin:8px 0 3px}
+.paper .pm{color:#6b7076}
+.paper .ptab{width:100%;border-collapse:collapse;margin:6px 0 12px}
+.paper .ptab th{background:#ededea;font-size:8px;text-align:left;padding:4px;font-weight:700}
+.paper .ptab td{padding:4px;vertical-align:top;font-size:9.5px}
+.paper tbody tr:nth-child(even) td{background:#f6f6f4}
+.paper .r{text-align:right}
+.paper .ptots{width:220px;margin-left:auto;font-size:10px}.paper .ptots div{display:flex;justify-content:space-between;padding:2px 0}.paper .ptots .pg{border-top:1px solid #000;margin-top:4px;padding-top:5px;font-size:13px;font-weight:700}
+.paper .pp{font-size:9.5px;margin-bottom:8px}
+.paper .ppaid{color:#1f9d55;font-weight:700;font-size:12px;margin:6px 0}
+.paper .pf{position:absolute;bottom:22px;left:0;right:0;text-align:center;font-size:9px;color:#6b7076}
 @media (prefers-reduced-motion: reduce){#sheet .panel,.sw:after{transition:none}}
 </style>
 </head>
@@ -163,7 +185,7 @@ function seedChecklist(jobs){
 function fresh(){
   const jobs=seedJobs();
   return {version:1,
-    settings:{business:{name:'',address:'',phone:'',email:''},bank:{name:'',sortCode:'',account:''},terms:'Payment due within 14 days of the invoice date.',estNote:'Estimate valid for 30 days. The final price may change if further faults are found once work begins.',footer:'Thank you for your business.',vatOn:false,vatRate:20,vatNo:'',rate:45,cur:'\u00a3',dueDays:14,invPrefix:'INV-',estPrefix:'EST-',nextInv:1,nextEst:1,lastBackup:null},
+    settings:{business:{name:'',address:'',phone:'',email:''},bank:{name:'',sortCode:'',account:''},terms:'Payment due within 14 days of the invoice date.',estNote:'Estimate valid for 30 days. The final price may change if further faults are found once work begins.',footer:'Thank you for your business.',vatOn:false,vatRate:20,vatNo:'',rate:45,cur:'\u00a3',dueDays:14,invPrefix:'INV-',estPrefix:'EST-',nextInv:1,nextEst:1,lastBackup:null,lookupUrl:''},
     jobs,checklist:seedChecklist(jobs),cars:[],checks:[],docs:[]};
 }
 function fix(s){
@@ -172,7 +194,7 @@ function fix(s){
   s.settings.business=Object.assign({},d.settings.business,s.settings.business||{});
   s.settings.bank=Object.assign({},d.settings.bank,s.settings.bank||{});
   for(const k of ['jobs','checklist','cars','checks','docs'])if(!Array.isArray(s[k]))s[k]=[];
-  s.cars.forEach(c=>{c.cust=c.cust||{name:'',phone:'',email:'',address:''};});
+  s.cars.forEach(c=>{c.cust=c.cust||{name:'',phone:'',email:'',address:''};c.fuel=c.fuel||'';c.engine=c.engine||'';});
   return s;
 }
 function load(){try{const raw=localStorage.getItem(KEY);if(raw)return fix(JSON.parse(raw));}catch(e){}return fresh();}
@@ -302,6 +324,7 @@ function pdfHeader(P,title,subtitle,rows){
   let ry=y+50;for(const r of rows.filter(Boolean)){P.textRight(RM,ry,r,9);ry+=12;}
   y=Math.max(by,ry)+10;P.line(M,y,RM,y,1);return y+16;
 }
+function vehicleLines(car){return car?[car.reg,carLabel(car),[car.colour,car.fuel,car.engine?car.engine+' cc':''].filter(Boolean).join(', '),car.year?'Year '+car.year:'',car.mileage?'Mileage '+car.mileage:'',car.motDue?'MOT due '+fmtDate(car.motDue):''].filter(Boolean):['-'];}
 function pdfParties(P,y,car){
   const M=40,cu=(car&&car.cust)||{};
   P.text(M,y,'CUSTOMER',8,true,GREY);P.text(P.W/2,y,'VEHICLE',8,true,GREY);y+=13;
@@ -309,7 +332,7 @@ function pdfParties(P,y,car){
   const cl=[cu.name,...String(cu.address||'').split('\n'),cu.phone,cu.email].filter(Boolean);
   if(!cl.length)cl.push('-');
   for(const l of cl){P.text(M,ly,l,10);ly+=13;}
-  const vl=car?[car.reg,carLabel(car),car.colour,car.year?'Year '+car.year:'',car.mileage?'Mileage '+car.mileage:'',car.motDue?'MOT due '+fmtDate(car.motDue):''].filter(Boolean):['-'];
+  const vl=vehicleLines(car);
   vl.forEach((l,i)=>{P.text(P.W/2,ry,l,10,i===0);ry+=13;});
   return Math.max(ly,ry)+10;
 }
@@ -391,6 +414,31 @@ function checkPdf(c){
   return P.build();
 }
 
+/* ---------- live preview (mirrors the PDF) ---------- */
+function previewHtml(d){
+  const s=S.settings,B=s.business,car=carById(d.carId),cu=(car&&car.cust)||{},t=docTotals(d),isInv=d.type==='inv';
+  const rates=[...new Set(d.lines.filter(l=>num(l.hours)>0).map(l=>num(l.rate)))];
+  const cl=[cu.name,...String(cu.address||'').split('\n'),cu.phone,cu.email].filter(Boolean),vl=vehicleLines(car);
+  const bk=s.bank,pay=[];
+  if(bk.name||bk.sortCode||bk.account)pay.push('Pay by bank transfer to: '+[bk.name,bk.sortCode?'Sort code '+bk.sortCode:'',bk.account?'Account '+bk.account:''].filter(Boolean).join(', ')+'. Reference '+d.number+'.');
+  if(s.terms)pay.push(s.terms);
+  return `<div class="paper">
+    <div class="ph"><div><div class="pb">${esc(B.name||'Business name not set')}</div><div class="ps">${esc(B.address).replace(/\n/g,'<br>')}${B.phone?'<br>Tel '+esc(B.phone):''}${B.email?'<br>'+esc(B.email):''}</div></div>
+      <div class="pt"><div class="ptt">${isInv?'INVOICE':'ESTIMATE'}</div><div class="pn">${esc(d.number)}</div><div class="ps">Date ${esc(fmtDate(d.date))}${isInv?'<br>Due '+esc(fmtDate(d.due)):''}${d.fromEst?'<br>From estimate '+esc(d.fromEst):''}${d.vatOn&&s.vatNo?'<br>VAT No '+esc(s.vatNo):''}</div></div></div>
+    <div class="pcols"><div><div class="plbl">CUSTOMER</div>${cl.length?cl.map(esc).join('<br>'):'-'}</div><div><div class="plbl">VEHICLE</div>${vl.map((l,i)=>i?esc(l):'<b>'+esc(l)+'</b>').join('<br>')}</div></div>
+    ${rates.length===1?`<div class="ps pm">Labour charged at ${esc(money(rates[0]))} per hour</div>`:''}
+    <table class="ptab"><thead><tr><th>Description</th><th class="r">Hours</th><th class="r">Labour</th><th class="r">Parts</th><th class="r">Total</th></tr></thead><tbody>
+    ${d.lines.map(l=>{const lab=num(l.hours)*num(l.rate);return `<tr><td>${esc(l.desc)}${num(l.hours)>0&&rates.length>1?' (labour at '+esc(money(l.rate))+'/h)':''}</td><td class="r">${num(l.hours)>0?r2(num(l.hours)):''}</td><td class="r">${num(l.hours)>0?esc(money(lab)):''}</td><td class="r">${num(l.parts)?esc(money(l.parts)):''}</td><td class="r">${esc(money(lab+num(l.parts)))}</td></tr>`;}).join('')||'<tr><td colspan="5" class="pm">No items</td></tr>'}</tbody></table>
+    <div class="ptots"><div><span>Labour</span><span>${esc(money(t.lab))}</span></div><div><span>Parts</span><span>${esc(money(t.parts))}</span></div>${d.vatOn?`<div><span>Subtotal</span><span>${esc(money(t.sub))}</span></div><div><span>VAT ${r2(d.vatRate)}%</span><span>${esc(money(t.vat))}</span></div>`:''}<div class="pg"><span>${isInv?'Total due':'Estimated total'}</span><span>${esc(money(t.total))}</span></div></div>
+    ${d.notes?`<div class="plbl">NOTES</div><div class="pp">${esc(d.notes).replace(/\n/g,'<br>')}</div>`:''}
+    ${isInv?`${d.status==='paid'?`<div class="ppaid">PAID${d.paidDate?' '+esc(fmtDate(d.paidDate)):''}</div>`:''}${pay.length?`<div class="plbl">PAYMENT</div><div class="pp">${pay.map(esc).join('<br>')}</div>`:''}`:(s.estNote?`<div class="pp pm">${esc(s.estNote)}</div>`:'')}
+    ${s.footer?`<div class="pf">${esc(s.footer)}</div>`:''}
+  </div>`;
+}
+function fitPreview(){$$('.pwrap').forEach(w=>{const p=$('.paper',w);if(!p)return;const sc=Math.min(1,w.clientWidth/595);p.style.transform='scale('+sc+')';w.style.height=Math.ceil(p.offsetHeight*sc)+'px';});}
+function updatePreview(){const d=docById(V.id),w=$('#pwrap');if(d&&w){w.innerHTML=previewHtml(d);fitPreview();}}
+window.addEventListener('resize',fitPreview);
+
 /* ---------- text versions (for email) ---------- */
 function carLine(car){return car?[car.reg,carLabel(car),car.mileage?car.mileage+' miles':''].filter(Boolean).join(', '):'';}
 function docText(d){
@@ -446,7 +494,7 @@ function render(){
   else if(V.screen==='doc')html=renderDoc();
   else if(V.screen==='docs')html=renderDocs();
   else html=renderSettings();
-  el.innerHTML=html;
+  el.innerHTML=html;el.classList.toggle('wide',V.screen==='doc');fitPreview();
   const tab=V.screen==='docs'?'docs':V.screen==='settings'?'settings':'cars';
   $$('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab));
   window.scrollTo(0,y);
@@ -482,9 +530,10 @@ function renderCar(){
     const [cls,lbl]=docStatus(x.o);return `<button class="item" data-act="openDoc" data-id="${x.o.id}"><div class="grow"><div class="name">${esc(docTitle(x.o))}</div><div class="meta">${esc(fmtDate(x.o.date))}${x.o.sent?' - sent':''}</div></div><span class="val">${esc(money(docTotals(x.o).total))}</span><span class="badge ${cls}">${lbl}</span></button>`;
   }).join('')}</div>`;
   h+=`<h2>Car</h2><div class="card">
-    <div class="field"><label>Registration</label><input class="reg" data-bind="car:reg" value="${esc(c.reg)}" autocapitalize="characters" autocomplete="off"></div>
+    <div class="field"><label>Registration</label><div class="row"><input class="reg grow" style="min-width:0" data-bind="car:reg" value="${esc(c.reg)}" autocapitalize="characters" autocomplete="off"><button class="btn sm" data-act="lookupReg">Look up</button></div></div>
     <div class="grid2"><div class="field"><label>Make</label><input data-bind="car:make" value="${esc(c.make)}"></div><div class="field"><label>Model</label><input data-bind="car:model" value="${esc(c.model)}"></div></div>
     <div class="grid3"><div class="field"><label>Year</label><input data-bind="car:year" inputmode="numeric" value="${esc(c.year)}"></div><div class="field"><label>Colour</label><input data-bind="car:colour" value="${esc(c.colour)}"></div><div class="field"><label>Mileage</label><input data-bind="car:mileage" inputmode="numeric" value="${esc(c.mileage)}"></div></div>
+    <div class="grid2"><div class="field"><label>Fuel</label><input data-bind="car:fuel" value="${esc(c.fuel)}"></div><div class="field"><label>Engine cc</label><input data-bind="car:engine" inputmode="numeric" value="${esc(c.engine)}"></div></div>
     <div class="field"><label>MOT due</label><input type="date" data-bind="car:motDue" value="${esc(c.motDue)}"></div>
     <div class="field"><label>Notes (tyre sizes, quirks, keys)</label><textarea data-bind="car:notes">${esc(c.notes)}</textarea></div></div>
   <h2>Customer</h2><div class="card">
@@ -520,7 +569,7 @@ function renderDoc(){
   const d=docById(V.id);if(!d)return `<div class="card empty">This document was deleted.</div>`;
   const car=carById(d.carId),isInv=d.type==='inv',[cls,lbl]=docStatus(d);
   setTop(docTitle(d),true,d.sent?'sent':'');
-  let h=`<div class="row" style="margin-bottom:12px">${plate(car?car.reg:'')}<div class="grow"><div style="font-weight:700">${esc(carLabel(car))}</div><div class="muted small">${esc(custName(car))}${car&&car.cust.email?' - '+esc(car.cust.email):''}</div></div><span class="badge ${cls}">${lbl}</span></div>`;
+  let h=`<div class="edA"><div class="row" style="margin-bottom:12px">${plate(car?car.reg:'')}<div class="grow"><div style="font-weight:700">${esc(carLabel(car))}</div><div class="muted small">${esc(custName(car))}${car&&car.cust.email?' - '+esc(car.cust.email):''}</div></div><span class="badge ${cls}">${lbl}</span></div>`;
   if(car&&!car.cust.email)h+=`<div class="banner">No email saved for this customer. Add one on the car page to use the Email button, or share the PDF to WhatsApp instead.</div>`;
   h+=`<div class="card"><div class="grid2"><div class="field"><label>Date</label><input type="date" data-bind="doc:date" value="${esc(d.date)}"></div>${isInv?`<div class="field"><label>Due</label><input type="date" data-bind="doc:due" value="${esc(d.due)}"></div>`:'<div></div>'}</div>
     <div class="toggle" style="margin-top:4px"><div><div style="font-weight:600">Add VAT at ${r2(d.vatRate)}%</div><div class="muted small">Only if the business is VAT registered</div></div><button class="sw ${d.vatOn?'on':''}" data-act="toggleVat" aria-label="VAT"></button></div></div>
@@ -528,14 +577,15 @@ function renderDoc(){
     <div class="num"><div><label>Hours</label><input data-bind="line:${i}:hours" data-num="1" inputmode="decimal" value="${esc(l.hours)}"></div><div><label>Rate</label><input data-bind="line:${i}:rate" data-num="1" inputmode="decimal" value="${esc(l.rate)}"></div><div><label>Parts</label><input data-bind="line:${i}:parts" data-num="1" inputmode="decimal" value="${esc(l.parts)}"></div><div class="tot" id="lt-${i}">${esc(money(num(l.hours)*num(l.rate)+num(l.parts)))}</div></div></div>`).join('')||'<div class="empty">No work added yet</div>'}</div>
   <div class="btns"><button class="btn" data-act="pickJob">+ From price list</button><button class="btn ghost" data-act="addLine">+ Blank line</button></div>
   <div class="card totals" id="totals">${totalsHtml(d)}</div>
-  <div class="card"><div class="field"><label>Notes on the ${isInv?'invoice':'estimate'}</label><textarea data-bind="doc:notes">${esc(d.notes)}</textarea></div></div>
-  <h2>Send</h2>
+  <div class="card"><div class="field"><label>Notes on the ${isInv?'invoice':'estimate'}</label><textarea data-bind="doc:notes">${esc(d.notes)}</textarea></div></div></div>
+  <div class="prev"><h2>Preview (updates as you type)</h2><div class="pwrap" id="pwrap">${previewHtml(d)}</div></div>
+  <div class="edB"><h2>Send</h2>
   <div class="btns three"><button class="btn" data-act="shareDoc">Share PDF</button><button class="btn" data-act="emailDoc">Email</button><button class="btn ghost" data-act="saveDoc">Save PDF</button></div>
   <h2>Status</h2>`;
   if(isInv)h+=d.status==='paid'?`<div class="card"><div class="row"><div class="grow"><div style="font-weight:700;color:var(--green)">Paid${d.paidDate?' on '+esc(fmtDate(d.paidDate)):''}</div></div><button class="btn ghost sm" data-act="markUnpaid">Mark unpaid</button></div></div>`:`<button class="btn blue" data-act="markPaid">Mark as paid</button>`;
   else h+=d.status==='invoiced'?`<button class="btn ghost" data-act="openInv">Open invoice ${esc((docById(d.invId)||{}).number||'')}</button>`:`<button class="btn blue" data-act="toInvoice">Turn into an invoice</button>${d.status==='declined'?`<button class="btn ghost" data-act="estStatus" data-s="open">Reopen estimate</button>`:`<button class="btn ghost" data-act="estStatus" data-s="declined">Customer declined</button>`}`;
   if(d.checkId&&checkById(d.checkId))h+=`<button class="btn ghost" data-act="openCheck" data-id="${d.checkId}">Open the health check</button>`;
-  h+=`<button class="btn danger" data-act="deleteDoc">Delete this ${isInv?'invoice':'estimate'}</button>`;
+  h+=`<button class="btn danger" data-act="deleteDoc">Delete this ${isInv?'invoice':'estimate'}</button></div>`;
   return h;
 }
 function renderDocs(){
@@ -569,6 +619,7 @@ function renderSettings(){
     <div class="grid2"><div class="field"><label>Labour rate per hour</label><input data-bind="s:rate" data-num="1" inputmode="decimal" value="${esc(s.rate)}"></div><div class="field"><label>Currency symbol</label><input data-bind="s:cur" value="${esc(s.cur)}"></div></div>
     <div class="grid2"><div class="field"><label>Invoice prefix</label><input data-bind="s:invPrefix" value="${esc(s.invPrefix)}"></div><div class="field"><label>Next invoice number</label><input data-bind="s:nextInv" data-num="1" inputmode="numeric" value="${esc(s.nextInv)}"></div></div>
     <div class="grid2"><div class="field"><label>Estimate prefix</label><input data-bind="s:estPrefix" value="${esc(s.estPrefix)}"></div><div class="field"><label>Next estimate number</label><input data-bind="s:nextEst" data-num="1" inputmode="numeric" value="${esc(s.nextEst)}"></div></div></div>
+  <h2>Reg lookup</h2><div class="card"><div class="field"><label>Lookup address (from the worker in the setup doc)</label><input data-bind="s:lookupUrl" value="${esc(s.lookupUrl)}" autocapitalize="off" placeholder="https://something.workers.dev"></div><p class="muted small" style="margin-top:8px">With this set, the Look up button on a car fills in make, colour, year, fuel, engine size and MOT due from the DVLA. Leave blank to type them by hand.</p></div>
   <h2>Price list (hours of labour + parts)</h2>
   <div class="list">${S.jobs.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(j=>`<button class="item" data-act="editJob" data-id="${j.id}"><div class="grow"><div class="name">${esc(j.name)}</div><div class="meta">${r2(num(j.hours))} h + parts ${esc(money(j.parts))}</div></div><span class="val">${esc(money(jobPrice(j)))}</span></button>`).join('')}</div>
   <button class="btn ghost" data-act="newJob">+ Add to price list</button>
@@ -635,8 +686,22 @@ const A={
   unpaidTab(){V.docFilter='unpaid';go('docs');},
   docFilter(el){V.docFilter=el.dataset.f;render();},
   /* cars */
-  newCar(){const c={id:uid(),reg:'',make:'',model:'',year:'',colour:'',mileage:'',motDue:'',notes:'',cust:{name:'',phone:'',email:'',address:''},created:Date.now(),updated:Date.now()};S.cars.push(c);save();go('car',c.id);const i=$('input.reg');if(i)i.focus();},
+  newCar(){const c={id:uid(),reg:'',make:'',model:'',year:'',colour:'',fuel:'',engine:'',mileage:'',motDue:'',notes:'',cust:{name:'',phone:'',email:'',address:''},created:Date.now(),updated:Date.now()};S.cars.push(c);save();go('car',c.id);const i=$('input.reg');if(i)i.focus();},
   openCar(el){go('car',el.dataset.id);},
+  lookupReg(el){
+    const c=carById(V.id),url=(S.settings.lookupUrl||'').trim();if(!c)return;
+    if(!url){toast('Set the reg lookup address in Settings first');return;}
+    const reg=(c.reg||'').replace(/[^A-Za-z0-9]/g,'');if(!reg){toast('Type the reg first');return;}
+    el.textContent='Looking up';el.disabled=true;
+    fetch(url+(url.includes('?')?'&':'?')+'reg='+encodeURIComponent(reg)).then(r=>r.json().then(j=>({ok:r.ok,j}))).then(({ok,j})=>{
+      const car=carById(V.id);if(!car)return;
+      if(!ok||!j||j.error){render();toast((j&&j.error)||'Lookup failed');return;}
+      for(const k of ['make','model','colour','fuel'])if(j[k])car[k]=String(j[k]);
+      if(j.year)car.year=String(j.year);if(j.engine)car.engine=String(j.engine);if(j.motDue)car.motDue=j.motDue;if(j.mileage&&!car.mileage)car.mileage=String(j.mileage);
+      car.updated=Date.now();save();render();
+      toast('Filled in: '+[j.make,j.model,j.colour,j.year].filter(Boolean).join(', ')+(j.motDue?'. MOT due '+fmtDate(j.motDue):''));
+    }).catch(()=>{render();toast('Lookup failed. Check the address in Settings and your signal.');});
+  },
   deleteCar(){
     const c=carById(V.id);if(!c)return;
     const n=S.docs.filter(d=>d.carId===c.id).length+S.checks.filter(x=>x.carId===c.id).length;
@@ -712,7 +777,7 @@ document.addEventListener('input',e=>{
     const [obj,key,scope]=r;
     obj[key]=t.dataset.num!=null?num(t.value):(key==='reg'?t.value.toUpperCase():t.value);
     if(scope==='car')obj.updated=Date.now();
-    if(scope==='line'||scope==='doc'){const d=docById(V.id);if(d){$('#totals').innerHTML=totalsHtml(d);if(scope==='line'){const i=+t.dataset.bind.split(':')[1],l=d.lines[i],c=$('#lt-'+i);if(c)c.textContent=money(num(l.hours)*num(l.rate)+num(l.parts));}}}
+    if(scope==='line'||scope==='doc'){const d=docById(V.id);if(d){$('#totals').innerHTML=totalsHtml(d);if(scope==='line'){const i=+t.dataset.bind.split(':')[1],l=d.lines[i],c=$('#lt-'+i);if(c)c.textContent=money(num(l.hours)*num(l.rate)+num(l.parts));}updatePreview();}}
     save();return;
   }
   if(t.id==='carSearch'){V.q=t.value;const y=window.scrollY;$('#screen').innerHTML=renderCars();const s=$('#carSearch');s.focus();s.setSelectionRange(s.value.length,s.value.length);window.scrollTo(0,y);}
