@@ -1,0 +1,14 @@
+{
+  "name": "Workshop",
+  "short_name": "Workshop",
+  "description": "Cars, health checks, estimates and invoices for a garage. Works offline.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f2f1ec",
+  "theme_color": "#23282e",
+  "icons": [
+    { "src": "icon-180.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
