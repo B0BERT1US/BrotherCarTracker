@@ -1,16 +1,24 @@
 /*
-  Reg lookup worker for the Workshop app.
-  Runs on Cloudflare Workers (free plan). It keeps the DVLA key private and
-  adds the CORS headers a web app needs. The app calls it as:
-      https://YOUR-WORKER.workers.dev/?reg=AB12CDE
+  Reg lookup worker for the Workshop app. Runs on Cloudflare Workers (free plan).
+  It keeps your API credentials private and adds the CORS headers a web app needs.
+  The app calls it as:   https://YOUR-WORKER.workers.dev/?reg=AB12CDE
 
-  Secrets to set in the worker's Settings > Variables:
-      DVLA_KEY        your key from the DVLA Vehicle Enquiry Service (free)
-      ALLOWED_ORIGIN  optional, e.g. https://b0bert1us.github.io  (blocks anyone else using your key)
+  Secrets to set in the worker (Settings > Variables and Secrets):
 
-  To swap in a paid provider later (Total Car Check, UK Vehicle Data...), replace the
-  fetch in lookupDvla with their API call and map their fields into the same shape.
+  DVSA MOT history API (free, gives make, model, colour, fuel, engine, year, MOT due, last mileage):
+      MOT_CLIENT_ID       from the DVSA email
+      MOT_CLIENT_SECRET   from the DVSA email (expires every 2 years, they email you before it does)
+      MOT_TOKEN_URL       the full token URL from the DVSA email (contains your tenant id)
+      MOT_API_KEY         from the DVSA email
+      MOT_SCOPE           optional, defaults to https://tapi.dvsa.gov.uk/.default
+
+  DVLA Vehicle Enquiry Service (optional, used only if the MOT ones are not set):
+      DVLA_KEY
+
+  ALLOWED_ORIGIN          optional, e.g. https://b0bert1us.github.io (blocks anyone else using your credentials)
 */
+let tokenCache = { token: '', exp: 0 };
+
 export default {
   async fetch(request, env) {
     const cors = {
@@ -25,15 +33,63 @@ export default {
     }
     const reg = (new URL(request.url).searchParams.get('reg') || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
     if (!reg) return json({ error: 'No reg given' }, 400, cors);
-    if (!env.DVLA_KEY) return json({ error: 'DVLA_KEY is not set on the worker' }, 500, cors);
     try {
-      return json(await lookupDvla(reg, env.DVLA_KEY), 200, cors);
+      if (env.MOT_CLIENT_ID && env.MOT_CLIENT_SECRET && env.MOT_TOKEN_URL && env.MOT_API_KEY) return json(await lookupMot(reg, env), 200, cors);
+      if (env.DVLA_KEY) return json(await lookupDvla(reg, env.DVLA_KEY), 200, cors);
+      return json({ error: 'No lookup credentials set on the worker yet' }, 500, cors);
     } catch (e) {
       return json({ error: e.message || 'Lookup failed' }, e.status || 502, cors);
     }
   }
 };
 
+/* ---- DVSA MOT history API ---- */
+async function motToken(env) {
+  if (tokenCache.token && Date.now() < tokenCache.exp) return tokenCache.token;
+  const body = new URLSearchParams({
+    grant_type: 'client_credentials',
+    client_id: env.MOT_CLIENT_ID,
+    client_secret: env.MOT_CLIENT_SECRET,
+    scope: env.MOT_SCOPE || 'https://tapi.dvsa.gov.uk/.default'
+  });
+  const r = await fetch(env.MOT_TOKEN_URL, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
+  if (!r.ok) throw Object.assign(new Error('Could not sign in to the DVSA (' + r.status + '). Check MOT_CLIENT_ID, MOT_CLIENT_SECRET and MOT_TOKEN_URL.'), { status: 502 });
+  const t = await r.json();
+  tokenCache = { token: t.access_token, exp: Date.now() + Math.max(60, (t.expires_in || 600) - 60) * 1000 };
+  return tokenCache.token;
+}
+
+async function lookupMot(reg, env) {
+  const token = await motToken(env);
+  const r = await fetch('https://history.mot.api.gov.uk/v1/trade/vehicles/registration/' + encodeURIComponent(reg), {
+    headers: { 'Authorization': 'Bearer ' + token, 'X-API-Key': env.MOT_API_KEY, 'Accept': 'application/json' }
+  });
+  if (r.status === 404) throw Object.assign(new Error('No vehicle found for ' + reg), { status: 404 });
+  if (!r.ok) throw Object.assign(new Error('DVSA lookup failed (' + r.status + ')'), { status: 502 });
+  const v = await r.json();
+  const tests = (v.motTests || []).slice().sort((a, b) => String(b.completedDate || '').localeCompare(String(a.completedDate || '')));
+  const last = tests[0] || null;
+  const lastPass = tests.find(t => String(t.testResult || '').toUpperCase() === 'PASSED' && t.expiryDate) || null;
+  const year = String(v.manufactureDate || v.registrationDate || v.firstUsedDate || '').slice(0, 4);
+  return {
+    reg: v.registration || reg,
+    make: title(v.make),
+    model: title(v.model),
+    colour: title(v.primaryColour),
+    fuel: title(v.fuelType),
+    engine: v.engineSize || '',
+    year: /^\d{4}$/.test(year) ? Number(year) : '',
+    motDue: isoDate(lastPass ? lastPass.expiryDate : v.motTestDueDate),
+    mileage: last && last.odometerValue ? String(last.odometerValue).replace(/[^0-9]/g, '') : '',
+    mileageUnit: last ? (last.odometerUnit || '') : '',
+    lastMotDate: last ? isoDate(last.completedDate) : '',
+    lastMotResult: last ? title(last.testResult) : '',
+    advisories: last ? (last.defects || []).filter(d => String(d.type || '').toUpperCase() === 'ADVISORY').map(d => d.text) : [],
+    recall: v.hasOutstandingRecall || ''
+  };
+}
+
+/* ---- DVLA Vehicle Enquiry Service (kept for when their registrations reopen) ---- */
 async function lookupDvla(reg, key) {
   const r = await fetch('https://driver-vehicle-licensing.api.gov.uk/vehicle-enquiry/v1/vehicles', {
     method: 'POST',
@@ -44,20 +100,12 @@ async function lookupDvla(reg, key) {
   if (!r.ok) throw Object.assign(new Error('DVLA lookup failed (' + r.status + ')'), { status: 502 });
   const v = await r.json();
   return {
-    reg: v.registrationNumber || reg,
-    make: title(v.make),
-    model: '',                       /* the DVLA service does not give the model, the DVSA MOT history API does */
-    colour: title(v.colour),
-    year: v.yearOfManufacture || '',
-    fuel: title(v.fuelType),
-    engine: v.engineCapacity || '',
-    motDue: v.motExpiryDate || '',
-    motStatus: v.motStatus || '',
-    taxStatus: v.taxStatus || '',
-    taxDue: v.taxDueDate || '',
-    firstRegistered: v.monthOfFirstRegistration || ''
+    reg: v.registrationNumber || reg, make: title(v.make), model: '', colour: title(v.colour), fuel: title(v.fuelType),
+    engine: v.engineCapacity || '', year: v.yearOfManufacture || '', motDue: v.motExpiryDate || '',
+    motStatus: v.motStatus || '', taxStatus: v.taxStatus || '', taxDue: v.taxDueDate || ''
   };
 }
 
+function isoDate(s) { s = String(s || '').replace(/\./g, '-').slice(0, 10); return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : ''; }
 function title(s) { return s ? String(s).toLowerCase().replace(/(^|[\s-])[a-z]/g, c => c.toUpperCase()) : ''; }
 function json(o, status, cors) { return new Response(JSON.stringify(o), { status, headers: Object.assign({ 'Content-Type': 'application/json' }, cors) }); }
