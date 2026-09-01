@@ -522,8 +522,17 @@ function renderCar(){
   setTop(c.reg||'Car',true);
   const hist=[...S.checks.filter(x=>x.carId===c.id).map(x=>({k:'check',o:x})),...S.docs.filter(x=>x.carId===c.id).map(x=>({k:x.type,o:x}))].sort((a,b)=>b.o.created-a.o.created);
   let h=`<div class="row" style="margin-bottom:12px">${plate(c.reg,true)}<div class="grow"><div style="font-weight:700">${esc(carLabel(c))}</div><div class="muted small">${esc(custName(c))}</div></div>${motBadge(c)}</div>
-  <div class="btns three"><button class="btn blue" data-act="newCheck">Health check</button><button class="btn" data-act="newEst">Estimate</button><button class="btn" data-act="newInv">Invoice</button></div>
-  <h2>History</h2>`;
+  <div class="btns three"><button class="btn blue" data-act="newCheck">Health check</button><button class="btn" data-act="newEst">Estimate</button><button class="btn" data-act="newInv">Invoice</button></div>`;
+  if(c.recall||(c.motTests&&c.motTests.length)||(c.motAdvisories&&c.motAdvisories.length)||(c.motFailures&&c.motFailures.length)){
+    h+=`<h2>Last MOT (from the lookup)</h2><div class="card">`;
+    if(c.recall)h+=`<div class="banner" style="margin:0 0 12px">Manufacturer safety recall outstanding on this vehicle. Worth telling the customer to book it with a main dealer, the fix is free.</div>`;
+    if(c.lastMot&&c.lastMot.date)h+=`<div class="row" style="margin-bottom:10px"><span class="badge ${/pass/i.test(c.lastMot.result)?'paid':'unpaid'}">${esc(c.lastMot.result||'Tested')}</span><span class="muted small">${esc(fmtDate(c.lastMot.date))}</span></div>`;
+    if(c.motFailures&&c.motFailures.length)h+=`<div class="small" style="margin-bottom:10px;color:var(--red)"><b>Failed on:</b>${c.motFailures.map(a=>'<br>- '+esc(a)).join('')}</div>`;
+    if(c.motAdvisories&&c.motAdvisories.length)h+=`<div class="small" style="margin-bottom:10px"><b>Advisories:</b>${c.motAdvisories.map(a=>'<br>- '+esc(a)).join('')}</div>`;
+    if(c.motTests&&c.motTests.length)h+=`<div class="mono small muted">${c.motTests.map(t=>esc(fmtDate(t.date))+'  '+esc(t.result)+(t.mileage?'  '+esc(Number(t.mileage).toLocaleString('en-GB'))+' '+esc(t.unit==='km'?'km':'mi'):'')).join('<br>')}</div>`;
+    h+=`</div>`;
+  }
+  h+=`<h2>History</h2>`;
   if(!hist.length)h+=`<div class="card empty">Nothing yet. Start with a health check, or go straight to an estimate or invoice.</div>`;
   else h+=`<div class="list">${hist.map(x=>{
     if(x.k==='check'){const n=checkCounts(x.o);return `<button class="item" data-act="openCheck" data-id="${x.o.id}"><div class="grow"><div class="name">Health check</div><div class="meta">${esc(fmtDate(x.o.date))}${x.o.mileage?' - '+esc(x.o.mileage)+' miles':''}</div></div>${n.urg?`<span class="badge urg">${n.urg} urgent</span>`:''}${n.adv?`<span class="badge adv">${n.adv} advisory</span>`:''}${!n.urg&&!n.adv&&n.ok?`<span class="badge ok">All OK</span>`:''}</button>`;}
@@ -559,6 +568,7 @@ function renderCheck(){
     <input data-bind="item:${idx}:note" value="${esc(i.note)}" placeholder="Note for the customer" ${i.status==='adv'||i.status==='urg'||i.note?'':'style="display:none"'}></div>`).join('')}</div>
   <div class="card"><div class="field"><label>Overall notes</label><textarea data-bind="check:notes">${esc(c.notes)}</textarea></div></div>
   <button class="btn blue" data-act="allOk">Mark every unchecked item OK</button>
+  ${car&&car.motAdvisories&&car.motAdvisories.length?`<button class="btn ghost" data-act="motToNotes">Copy the ${car.motAdvisories.length} MOT advisories into the notes</button>`:''}
   ${n.urg||n.adv?`<button class="btn" data-act="estFromCheck">Make estimate from the ${n.urg+n.adv} flagged item${n.urg+n.adv>1?'s':''}</button>`:''}
   <h2>Send the report</h2>
   <div class="btns three"><button class="btn" data-act="shareCheck">Share PDF</button><button class="btn" data-act="emailCheck">Email</button><button class="btn ghost" data-act="saveCheck">Save PDF</button></div>
@@ -698,8 +708,14 @@ const A={
       if(!ok||!j||j.error){render();toast((j&&j.error)||'Lookup failed');return;}
       for(const k of ['make','model','colour','fuel'])if(j[k])car[k]=String(j[k]);
       if(j.year)car.year=String(j.year);if(j.engine)car.engine=String(j.engine);if(j.motDue)car.motDue=j.motDue;if(j.mileage&&!car.mileage)car.mileage=String(j.mileage);
+      car.recall=/^y/i.test(String(j.recall||''))?'yes':'';
+      car.lastMot=j.lastMotDate?{date:j.lastMotDate,result:j.lastMotResult||''}:car.lastMot;
+      if(Array.isArray(j.advisories))car.motAdvisories=j.advisories.slice(0,12);
+      if(Array.isArray(j.failures))car.motFailures=j.failures.slice(0,12);
+      if(Array.isArray(j.tests))car.motTests=j.tests.slice(0,5);
       car.updated=Date.now();save();render();
-      toast('Filled in: '+[j.make,j.model,j.colour,j.year].filter(Boolean).join(', ')+(j.motDue?'. MOT due '+fmtDate(j.motDue):''));
+      const adv=(j.advisories||[]).length;
+      toast('Filled in: '+[j.make,j.model,j.colour,j.year].filter(Boolean).join(', ')+(j.motDue?'. MOT due '+fmtDate(j.motDue):'')+(adv?'. '+adv+' advisories on the last MOT':''));
     }).catch(()=>{render();toast('Lookup failed. Check the address in Settings and your signal.');});
   },
   deleteCar(){
@@ -719,6 +735,12 @@ const A={
   shareCheck(){const c=checkById(V.id),car=carById(c.carId);const r=sharePdf(checkPdf(c),safeName('Health check '+(car?car.reg:'')+' '+c.date)+'.pdf','Vehicle health check');toast(r==='shared'?'Sharing the report':'Report saved');},
   saveCheck(){const c=checkById(V.id),car=carById(c.carId);downloadBytes(checkPdf(c),safeName('Health check '+(car?car.reg:'')+' '+c.date)+'.pdf','application/pdf');toast('Report saved');},
   emailCheck(){const c=checkById(V.id),car=carById(c.carId);mailto(car&&car.cust.email,'Vehicle health check '+(car?car.reg:'')+(S.settings.business.name?' - '+S.settings.business.name:''),checkText(c));},
+  motToNotes(){
+    const c=checkById(V.id),car=carById(c.carId);
+    if(!car||!car.motAdvisories||!car.motAdvisories.length)return;
+    const t='Advisories from the last MOT'+(car.lastMot&&car.lastMot.date?' ('+fmtDate(car.lastMot.date)+')':'')+':\n- '+car.motAdvisories.join('\n- ');
+    c.notes=(c.notes?c.notes+'\n\n':'')+t;save();render();toast('Advisories added to the notes');
+  },
   deleteCheck(){const c=checkById(V.id);confirmSheet('Delete check','Delete this health check?','Delete',()=>{S.checks=S.checks.filter(x=>x.id!==c.id);save();go('car',c.carId,true);},true);},
   /* doc */
   toggleVat(){const d=docById(V.id);d.vatOn=!d.vatOn;if(d.vatOn&&!d.vatRate)d.vatRate=num(S.settings.vatRate)||20;save();render();},

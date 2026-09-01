@@ -1,5 +1,5 @@
 /* Bump this name every time you push a new version */
-const CACHE = 'workshop-v1';
+const CACHE = 'workshop-v2';
 const FILES = ['./', './index.html', './manifest.json', './icon-180.png', './icon-512.png'];
 
 self.addEventListener('install', e => {

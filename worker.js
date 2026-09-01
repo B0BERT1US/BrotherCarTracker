@@ -12,7 +12,11 @@
       MOT_API_KEY         from the DVSA email
       MOT_SCOPE           optional, defaults to https://tapi.dvsa.gov.uk/.default
 
-  DVLA Vehicle Enquiry Service (optional, used only if the MOT ones are not set):
+  UK Vehicle Data / Vehicle Data Global (paid, instant signup, used only if the MOT ones are not set):
+      UKVD_KEY            API key from their control panel
+      UKVD_PACKAGE        optional, defaults to VehicleData
+
+  DVLA Vehicle Enquiry Service (optional, used only if none of the above are set):
       DVLA_KEY
 
   ALLOWED_ORIGIN          optional, e.g. https://b0bert1us.github.io (blocks anyone else using your credentials)
@@ -35,6 +39,7 @@ export default {
     if (!reg) return json({ error: 'No reg given' }, 400, cors);
     try {
       if (env.MOT_CLIENT_ID && env.MOT_CLIENT_SECRET && env.MOT_TOKEN_URL && env.MOT_API_KEY) return json(await lookupMot(reg, env), 200, cors);
+      if (env.UKVD_KEY) return json(await lookupUkvd(reg, env), 200, cors);
       if (env.DVLA_KEY) return json(await lookupDvla(reg, env.DVLA_KEY), 200, cors);
       return json({ error: 'No lookup credentials set on the worker yet' }, 500, cors);
     } catch (e) {
@@ -84,8 +89,37 @@ async function lookupMot(reg, env) {
     mileageUnit: last ? (last.odometerUnit || '') : '',
     lastMotDate: last ? isoDate(last.completedDate) : '',
     lastMotResult: last ? title(last.testResult) : '',
-    advisories: last ? (last.defects || []).filter(d => String(d.type || '').toUpperCase() === 'ADVISORY').map(d => d.text) : [],
+    advisories: last ? (last.defects || []).filter(d => ['ADVISORY', 'MINOR'].includes(String(d.type || '').toUpperCase())).map(d => d.text) : [],
+    failures: last ? (last.defects || []).filter(d => ['MAJOR', 'DANGEROUS', 'FAIL', 'PRS'].includes(String(d.type || '').toUpperCase())).map(d => d.text) : [],
+    tests: tests.slice(0, 5).map(t => ({ date: isoDate(t.completedDate), result: title(t.testResult), mileage: t.odometerValue ? String(t.odometerValue).replace(/[^0-9]/g, '') : '', unit: t.odometerUnit || '' })),
     recall: v.hasOutstandingRecall || ''
+  };
+}
+
+/* ---- UK Vehicle Data / Vehicle Data Global (paid, pay as you go) ----
+   Written from their published URL format. If a lookup errors, open the worker's Logs in Cloudflare,
+   compare the reply with the field names below and adjust. */
+async function lookupUkvd(reg, env) {
+  const pkg = env.UKVD_PACKAGE || 'VehicleData';
+  const url = 'https://uk1.ukvehicledata.co.uk/api/datapackage/' + pkg + '?v=2&api_nullitems=1&auth_apikey=' + encodeURIComponent(env.UKVD_KEY) + '&key_VRM=' + encodeURIComponent(reg);
+  const r = await fetch(url);
+  if (!r.ok) throw Object.assign(new Error('UKVD lookup failed (' + r.status + ')'), { status: 502 });
+  const data = await r.json();
+  const resp = data.Response || {};
+  if (resp.StatusCode && resp.StatusCode !== 'Success') throw Object.assign(new Error('UKVD: ' + (resp.StatusMessage || resp.StatusCode)), { status: resp.StatusCode === 'KeyInvalid' ? 500 : 404 });
+  const items = resp.DataItems || {};
+  const v = items.VehicleRegistration || {};
+  const mot = items.VehicleStatus || items.MotVed || {};
+  return {
+    reg: v.Vrm || reg,
+    make: title(v.Make),
+    model: title(v.Model),
+    colour: title(v.Colour),
+    fuel: title(v.FuelType),
+    engine: v.EngineCapacity || '',
+    year: v.YearOfManufacture || String(v.DateFirstRegistered || '').slice(0, 4) || '',
+    motDue: isoDate(mot.MotDueDate || mot.MotExpiryDate || ''),
+    transmission: title(v.Transmission)
   };
 }
 
